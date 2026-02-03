@@ -1,0 +1,1716 @@
+<!DOCTYPE html>
+<html lang="ja">
+<!--
+=================================================================
+人狼ゲーム - LINEミニアプリ (LIFF対応版)
+=================================================================
+
+【LIFF設定方法】
+1. LINE Developers Console (https://developers.line.biz/console/) でLIFF IDを取得
+2. 下記のJavaScriptコード内の LIFF_ID を書き換え:
+   const LIFF_ID = 'YOUR_LIFF_ID_HERE';
+   ↓
+   const LIFF_ID = '1234567890-AbCdEfGh'; // 取得したLIFF ID
+
+3. このファイルをHTTPS環境にアップロード（GitHub Pages / Netlify等）
+
+4. LINE Developers Consoleの「Endpoint URL」に設定
+
+詳しくは LIFF_IMPLEMENTATION_GUIDE.md を参照してください。
+
+=================================================================
+-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人狼ゲーム - LINEミニアプリ</title>
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background: #1a1a2e;
+            min-height: 100vh;
+            padding: 20px;
+            color: #ffffff;
+            transition: background 0.5s ease;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                repeating-linear-gradient(
+                    0deg,
+                    rgba(0, 0, 0, 0.1) 0px,
+                    transparent 1px,
+                    transparent 2px,
+                    rgba(0, 0, 0, 0.1) 3px
+                );
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body.day-phase {
+            background: #FFB347;
+            animation: dayPulse 3s ease-in-out infinite;
+        }
+
+        body.night-phase {
+            background: #1a1a2e;
+            animation: nightPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes dayPulse {
+            0%, 100% { background: #FFB347; }
+            50% { background: #FFCC70; }
+        }
+
+        @keyframes nightPulse {
+            0%, 100% { background: #1a1a2e; }
+            50% { background: #0f0f1e; }
+        }
+
+        .pixel-stars {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .star {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: white;
+            box-shadow: 0 0 8px white;
+            animation: twinkle 2s ease-in-out infinite;
+        }
+
+        body.day-phase .star {
+            display: none;
+        }
+
+        @keyframes twinkle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .reset-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #ff4757;
+            border: 4px solid #2d3436;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 0 #000, 0 8px 15px rgba(0,0,0,0.3);
+            transition: all 0.1s;
+            font-family: Arial, sans-serif;
+        }
+
+        .reset-button:hover {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #000, 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .reset-button:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #000, 0 2px 5px rgba(0,0,0,0.3);
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: rgba(20, 20, 30, 0.95);
+            border: 4px solid #2d3436;
+            border-radius: 0;
+            padding: 30px;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.5);
+            position: relative;
+            z-index: 2;
+        }
+
+        body.day-phase .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-color: #2d3436;
+        }
+
+        .wolf-decoration {
+            text-align: center;
+            font-size: 80px;
+            margin-bottom: 10px;
+            animation: float 3s ease-in-out infinite;
+            filter: drop-shadow(4px 4px 0 rgba(0,0,0,0.3));
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        h1 {
+            text-align: center;
+            color: #00ff88;
+            margin-bottom: 10px;
+            font-size: 24px;
+            text-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+            letter-spacing: 2px;
+        }
+
+        body.day-phase h1 {
+            color: #ff4757;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+
+        body.day-phase .subtitle {
+            color: #555;
+        }
+
+        .setup-section, .name-input-section, .role-reveal-section, .night-section, .vote-section, .result-section {
+            display: none;
+        }
+
+        .setup-section.active, .name-input-section.active, .role-reveal-section.active, .night-section.active, .vote-section.active, .result-section.active {
+            display: block;
+        }
+
+        .input-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 12px;
+            font-weight: 600;
+            color: #00ff88;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        body.day-phase label {
+            color: #ff4757;
+        }
+
+        input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 4px solid #2d3436;
+            background: #0f0f1e;
+            border-radius: 0;
+            font-size: 14px;
+            font-family: 'Press Start 2P', cursive;
+            transition: all 0.1s;
+            color: #ffffff;
+            box-shadow: inset 4px 4px 0 rgba(0,0,0,0.3);
+        }
+
+        body.day-phase input[type="number"],
+        body.day-phase input[type="text"] {
+            background: white;
+            color: #222;
+        }
+
+        input[type="number"]:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5), inset 4px 4px 0 rgba(0,0,0,0.3);
+        }
+
+        body.day-phase input[type="number"]:focus,
+        body.day-phase input[type="text"]:focus {
+            border-color: #ff4757;
+            box-shadow: 0 0 20px rgba(255, 71, 87, 0.5), inset 4px 4px 0 rgba(0,0,0,0.1);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 3px solid #2d3436;
+            border-radius: 0;
+            margin-bottom: 15px;
+        }
+
+        body.day-phase .checkbox-group {
+            background: rgba(255, 71, 87, 0.1);
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            border: 3px solid #2d3436;
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: 500;
+            color: #ffffff;
+            font-size: 10px;
+        }
+
+        body.day-phase .checkbox-group label {
+            color: #333;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: 4px solid #2d3436;
+            border-radius: 0;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: 'Press Start 2P', cursive;
+            cursor: pointer;
+            transition: all 0.1s;
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 0 #000;
+        }
+
+        .btn:hover {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #000;
+        }
+
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #000;
+        }
+
+        .btn-primary {
+            background: #00ff88;
+            color: #000;
+        }
+
+        .btn-primary:hover {
+            background: #00dd77;
+        }
+
+        body.day-phase .btn-primary {
+            background: #ff4757;
+            color: white;
+        }
+
+        body.day-phase .btn-primary:hover {
+            background: #ee3344;
+        }
+
+        .btn-secondary {
+            background: #444;
+            color: white;
+        }
+
+        body.day-phase .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-danger {
+            background: #ff4757;
+            color: white;
+        }
+
+        .role-card {
+            text-align: center;
+            padding: 40px 20px;
+            background: #00ff88;
+            border: 4px solid #2d3436;
+            border-radius: 0;
+            margin: 20px 0;
+            color: #000;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .role-card::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            right: 8px;
+            bottom: 8px;
+            border: 2px dashed #2d3436;
+        }
+
+        .role-card.werewolf {
+            background: #2d3436;
+            color: #ff4757;
+        }
+
+        .role-card.seer {
+            background: #5f27cd;
+            color: #ffffff;
+        }
+
+        .role-card.medium {
+            background: #48dbfb;
+            color: #000;
+        }
+
+        .role-card.knight {
+            background: #feca57;
+            color: #000;
+        }
+
+        .role-card.villager {
+            background: #00ff88;
+            color: #000;
+        }
+
+        .role-card h2 {
+            font-size: 28px;
+            margin-bottom: 15px;
+            text-shadow: 3px 3px 0 rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 1;
+        }
+
+        .role-card p {
+            font-size: 10px;
+            line-height: 1.6;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hidden-role {
+            text-align: center;
+            padding: 60px 20px;
+            background: #5f27cd;
+            border: 4px solid #2d3436;
+            border-radius: 0;
+            color: white;
+            cursor: pointer;
+            margin: 20px 0;
+            transition: all 0.1s;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .hidden-role::after {
+            content: '?';
+            position: absolute;
+            font-size: 120px;
+            opacity: 0.1;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .hidden-role:hover {
+            transform: translate(4px, 4px);
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+        }
+
+        .hidden-role:active {
+            transform: translate(8px, 8px);
+            box-shadow: 0 0 0 rgba(0,0,0,0.3);
+        }
+
+        .hidden-role h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hidden-role p {
+            font-size: 10px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .vote-section h3 {
+            color: #00ff88;
+        }
+
+        body.day-phase .vote-section h3 {
+            color: #000;
+        }
+
+        .player-list {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 3px solid #2d3436;
+            border-radius: 0;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.1s;
+            font-size: 10px;
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
+            color: #ffffff;
+        }
+
+        body.day-phase .player-item {
+            background: rgba(255, 71, 87, 0.1);
+            color: #000;
+        }
+
+        .player-item:hover {
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+        }
+
+        .player-item:active {
+            transform: translate(4px, 4px);
+            box-shadow: 0 0 0 rgba(0,0,0,0.2);
+        }
+
+        .player-item.selected {
+            background: #00ff88;
+            color: #000;
+            border-color: #000;
+        }
+
+        body.day-phase .player-item.selected {
+            background: #ff4757;
+            color: white;
+        }
+
+        .player-item.dead {
+            opacity: 0.4;
+            text-decoration: line-through;
+        }
+
+        .status-message {
+            text-align: center;
+            padding: 20px;
+            background: #feca57;
+            border: 4px solid #2d3436;
+            border-radius: 0;
+            margin: 20px 0;
+            font-weight: 600;
+            color: #000;
+            font-size: 10px;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.3);
+            line-height: 1.6;
+        }
+
+        .game-info {
+            background: rgba(95, 39, 205, 0.2);
+            border: 3px solid #2d3436;
+            padding: 15px;
+            border-radius: 0;
+            margin-bottom: 20px;
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
+        }
+
+        body.day-phase .game-info {
+            background: rgba(255, 204, 112, 0.3);
+        }
+
+        .game-info h3 {
+            color: #00ff88;
+            margin-bottom: 15px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        body.day-phase .game-info h3 {
+            color: #ff4757;
+        }
+
+        .game-info p {
+            color: #ccc;
+            line-height: 1.8;
+            font-size: 10px;
+        }
+
+        body.day-phase .game-info p {
+            color: #333;
+        }
+
+        .phase-indicator {
+            text-align: center;
+            padding: 15px;
+            background: #5f27cd;
+            color: white;
+            border: 4px solid #2d3436;
+            border-radius: 0;
+            margin-bottom: 20px;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.3);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        body.day-phase .phase-indicator {
+            background: #feca57;
+            color: #000;
+        }
+
+        .winner-announcement {
+            text-align: center;
+            padding: 40px;
+            background: #00ff88;
+            border: 4px solid #2d3436;
+            border-radius: 0;
+            color: #000;
+            margin: 20px 0;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .winner-announcement::before {
+            content: '★';
+            position: absolute;
+            font-size: 200px;
+            opacity: 0.1;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .winner-announcement h2 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            text-shadow: 3px 3px 0 rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 1;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .winner-announcement p {
+            font-size: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .name-input-list {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .name-input-item {
+            margin-bottom: 15px;
+        }
+
+        .name-input-item label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 10px;
+        }
+
+        .reset-btn-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .reset-btn-container .btn {
+            margin-top: 0;
+            font-size: 10px;
+        }
+
+        /* リセット確認モーダル */
+        .reset-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .reset-modal.active {
+            display: flex;
+        }
+
+        .reset-modal-content {
+            background: #1a1a2e;
+            border: 4px solid #2d3436;
+            padding: 30px;
+            max-width: 400px;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.5);
+        }
+
+        .reset-modal h3 {
+            color: #00ff88;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .reset-modal p {
+            color: #ccc;
+            font-size: 10px;
+            line-height: 1.8;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .reset-modal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .reset-modal-buttons .btn {
+            flex: 1;
+            margin-top: 0;
+            font-size: 10px;
+        }
+
+        /* 新規ゲーム確認モーダル */
+        .newgame-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 10001;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .newgame-modal.active {
+            display: flex;
+        }
+
+        .newgame-modal-content {
+            background: #1a1a2e;
+            border: 4px solid #ff4757;
+            padding: 30px;
+            max-width: 400px;
+            box-shadow: 8px 8px 0 rgba(0,0,0,0.5);
+        }
+
+        .newgame-modal h3 {
+            color: #ff4757;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .newgame-modal p {
+            color: #ccc;
+            font-size: 10px;
+            line-height: 1.8;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .newgame-modal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .newgame-modal-buttons .btn {
+            flex: 1;
+            margin-top: 0;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body class="night-phase">
+    <div class="pixel-stars" id="starsContainer"></div>
+    
+    <button class="reset-button" id="resetBtn" title="ゲームをリセット">×</button>
+
+    <!-- リセット確認モーダル -->
+    <div class="reset-modal" id="resetModal">
+        <div class="reset-modal-content">
+            <h3>RESET GAME?</h3>
+            <p>どちらを選択しますか？</p>
+            <div class="reset-modal-buttons">
+                <button class="btn btn-primary" onclick="replayGame()">同じメンバーで再プレイ</button>
+                <button class="btn btn-secondary" onclick="showNewGameConfirm()">新規ゲーム</button>
+            </div>
+            <button class="btn btn-secondary" onclick="closeResetModal()" style="margin-top: 10px;">キャンセル</button>
+        </div>
+    </div>
+
+    <!-- 新規ゲーム確認モーダル -->
+    <div class="newgame-modal" id="newGameModal">
+        <div class="newgame-modal-content">
+            <h3>⚠️ 新規ゲーム ⚠️</h3>
+            <p>完全に最初からやり直します。<br>プレイヤー設定も全てリセットされます。<br>本当によろしいですか？</p>
+            <div class="newgame-modal-buttons">
+                <button class="btn btn-danger" onclick="startNewGame()">はい、新規ゲーム</button>
+                <button class="btn btn-secondary" onclick="closeNewGameModal()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="wolf-decoration">🐺</div>
+        <h1>WEREWOLF</h1>
+        <p class="subtitle">GAME START</p>
+
+        <!-- ゲーム設定画面 -->
+        <div class="setup-section active">
+            <div class="input-group">
+                <label for="playerCount">Players</label>
+                <input type="number" id="playerCount" min="4" max="12" value="6">
+            </div>
+
+            <div class="input-group">
+                <label>Extra Roles</label>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="includeMedium" checked>
+                    <label for="includeMedium">✝️ 霊媒師</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="includeKnight" checked>
+                    <label for="includeKnight">⚔️ 騎士</label>
+                </div>
+            </div>
+
+            <div class="game-info">
+                <h3>📋 役職構成</h3>
+                <p id="roleComposition">役職が表示されます</p>
+            </div>
+
+            <button class="btn btn-primary" onclick="goToNameInput()">NEXT</button>
+        </div>
+
+        <!-- プレイヤー名入力画面 -->
+        <div class="name-input-section">
+            <div class="game-info">
+                <h3>👥 Player Names</h3>
+                <p>各プレイヤーの名前を入力してください</p>
+            </div>
+
+            <ul class="name-input-list" id="nameInputList"></ul>
+
+            <button class="btn btn-primary" onclick="startGame()">START GAME</button>
+            <button class="btn btn-secondary" onclick="backToSetup()">BACK</button>
+        </div>
+
+        <!-- 役職確認画面 -->
+        <div class="role-reveal-section">
+            <div class="phase-indicator">Role Check</div>
+            
+            <div id="playerConfirmation" class="game-info" style="text-align: center; padding: 40px 20px;">
+                <h3 id="confirmPlayerName" style="font-size: 18px; margin-bottom: 20px;"></h3>
+                <button class="btn btn-primary" onclick="confirmPlayer()">YES</button>
+            </div>
+
+            <div class="hidden-role" id="hiddenRole" onclick="revealRole()" style="display: none;">
+                <h3 id="playerNumber">Player 1</h3>
+                <p>Tap to reveal</p>
+            </div>
+
+            <div id="roleCard" style="display: none;"></div>
+
+            <button class="btn btn-primary" id="nextPlayerBtn" style="display: none;" onclick="nextPlayer()">NEXT</button>
+            <button class="btn btn-primary" id="startNightBtn" style="display: none;" onclick="startNight()">START NIGHT</button>
+        </div>
+
+        <!-- 夜フェーズ -->
+        <div class="night-section">
+            <div class="phase-indicator" id="nightPhaseIndicator">🌙 NIGHT - DAY 1</div>
+            
+            <!-- 夜アクションプレイヤー確認 -->
+            <div id="nightPlayerConfirmation" style="display: none;" class="game-info">
+                <h3 id="nightConfirmPlayerName" style="text-align: center; font-size: 18px; margin-bottom: 20px;"></h3>
+                <button class="btn btn-primary" onclick="confirmNightPlayer()">YES</button>
+            </div>
+
+            <div id="nightActionContent"></div>
+
+            <!-- 占い結果表示用 -->
+            <div id="seerResult" style="display: none;" class="game-info">
+                <h3 style="text-align: center; margin-bottom: 20px;">🔮 占い結果</h3>
+                <div id="seerResultContent" style="text-align: center; font-size: 12px; line-height: 2;"></div>
+                <button class="btn btn-primary" onclick="closeSeerResult()">OK</button>
+            </div>
+
+            <button class="btn btn-primary" id="nightNextBtn" style="display: none;" onclick="nextNightAction()">NEXT</button>
+            <button class="btn btn-primary" id="startDayBtn" style="display: none;" onclick="startDay()">START DAY</button>
+        </div>
+
+        <!-- 投票フェーズ -->
+        <div class="vote-section">
+            <div class="phase-indicator" id="votePhaseIndicator">☀️ DAY - DAY 1</div>
+            
+            <div class="status-message" id="nightResultMessage"></div>
+
+            <div class="game-info">
+                <h3>💬 Discussion</h3>
+                <p>みんなで話し合って、人狼だと思う人に投票しましょう。一人ずつ投票していきます。</p>
+            </div>
+
+            <!-- 投票者確認 -->
+            <div id="voterConfirmation" style="display: none;" class="game-info">
+                <h3 id="currentVoterName" style="text-align: center; font-size: 18px; margin-bottom: 20px;"></h3>
+                <button class="btn btn-primary" onclick="confirmVoter()">YES</button>
+            </div>
+
+            <!-- 投票選択 -->
+            <div id="voteSelection" style="display: none;">
+                <h3 style="margin: 20px 0 10px 0; font-size: 12px;">VOTE</h3>
+                <ul class="player-list" id="votePlayerList"></ul>
+            </div>
+
+            <button class="btn btn-primary" id="startVoteBtn" onclick="startVoting()">投票開始</button>
+            <button class="btn btn-primary" id="confirmVoteBtn" style="display: none;" onclick="processVote()">投票結果を確認</button>
+        </div>
+
+        <!-- 結果画面 -->
+        <div class="result-section">
+            <div id="resultContent"></div>
+            <div class="reset-btn-container">
+                <button class="btn btn-primary" onclick="resetGame()">REPLAY</button>
+                <button class="btn btn-secondary" onclick="location.reload()">NEW GAME</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // LIFF 初期化
+        // ==========================================
+        // ⚠️ 重要: ここにあなたのLIFF IDを入力してください
+        // LINE Developers Console の LIFF タブで取得できます
+        const LIFF_ID = '2009040702-Yv1kCkE7'; // あなたのLIFF ID
+
+        // LIFF初期化処理
+        window.addEventListener('DOMContentLoaded', function() {
+            // LIFF IDが設定されているかチェック
+            if (LIFF_ID === 'YOUR_LIFF_ID_HERE') {
+                console.warn('⚠️ LIFF IDが設定されていません。LINE Developers ConsoleでLIFF IDを取得して設定してください。');
+                // LIFF IDがなくてもゲームは動作します（開発・テスト用）
+                initializeGame();
+                return;
+            }
+
+            // LIFF初期化
+            liff.init({ liffId: LIFF_ID })
+                .then(() => {
+                    console.log('✅ LIFF初期化成功');
+                    
+                    // ログインチェック
+                    if (!liff.isLoggedIn()) {
+                        console.log('ログインしていません。ログイン画面に遷移します。');
+                        liff.login();
+                    } else {
+                        console.log('✅ ログイン済み');
+                        
+                        // ユーザー情報取得（オプション）
+                        liff.getProfile()
+                            .then(profile => {
+                                console.log('ユーザー情報取得成功:', profile.displayName);
+                                // ゲーム初期化
+                                initializeGame(profile);
+                            })
+                            .catch(err => {
+                                console.error('プロフィール取得エラー:', err);
+                                // エラーでもゲームは起動
+                                initializeGame();
+                            });
+                    }
+                })
+                .catch(err => {
+                    console.error('❌ LIFF初期化エラー:', err);
+                    alert('LINEアプリで開いてください');
+                    // エラーでもゲームは起動（開発・テスト用）
+                    initializeGame();
+                });
+        });
+
+        // ゲーム初期化関数
+        function initializeGame(userProfile) {
+            console.log('🎮 ゲーム初期化開始');
+            
+            // プロフィール情報があれば、最初のプレイヤー名に設定（オプション）
+            if (userProfile) {
+                // 後でプレイヤー名入力時にデフォルト値として使用可能
+                window.userDisplayName = userProfile.displayName;
+            }
+        }
+
+        // ==========================================
+        // ゲームロジック
+        // ==========================================
+
+        // Create pixel stars
+        function createStars() {
+            const container = document.getElementById('starsContainer');
+            for (let i = 0; i < 50; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+                star.style.animationDelay = Math.random() * 2 + 's';
+                container.appendChild(star);
+            }
+        }
+
+        createStars();
+
+        let gameState = {
+            playerCount: 6,
+            players: [],
+            currentPlayer: 0,
+            day: 1,
+            phase: 'setup',
+            nightActions: [],
+            currentNightAction: 0,
+            includeMedium: true,
+            includeKnight: true,
+            werewolfTarget: null,
+            werewolfVotes: {},
+            knightTarget: null,
+            seerTarget: null,
+            mediumTarget: null,
+            voteCounts: {},
+            totalVotes: 0,
+            playerNames: [],
+            currentVoter: 0,
+            votes: []
+        };
+
+        window.onload = function() {
+            // リセットボタンのイベントリスナー
+            document.getElementById('resetBtn').addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                confirmReset();
+            });
+
+            updateRoleComposition();
+            document.getElementById('playerCount').addEventListener('change', updateRoleComposition);
+            document.getElementById('includeMedium').addEventListener('change', updateRoleComposition);
+            document.getElementById('includeKnight').addEventListener('change', updateRoleComposition);
+        };
+
+        function updateRoleComposition() {
+            const playerCount = parseInt(document.getElementById('playerCount').value);
+            const includeMedium = document.getElementById('includeMedium').checked;
+            const includeKnight = document.getElementById('includeKnight').checked;
+
+            const composition = getRoleComposition(playerCount, includeMedium, includeKnight);
+            document.getElementById('roleComposition').innerHTML = 
+                `人狼 × ${composition.werewolf}<br>` +
+                `占い師 × ${composition.seer}<br>` +
+                (composition.medium > 0 ? `霊媒師 × ${composition.medium}<br>` : '') +
+                (composition.knight > 0 ? `騎士 × ${composition.knight}<br>` : '') +
+                `市民 × ${composition.villager}`;
+        }
+
+        function getRoleComposition(playerCount, includeMedium, includeKnight) {
+            let werewolf = Math.floor(playerCount / 3);
+            if (werewolf < 1) werewolf = 1;
+            
+            let seer = 1;
+            let medium = includeMedium ? 1 : 0;
+            let knight = includeKnight ? 1 : 0;
+            let villager = playerCount - werewolf - seer - medium - knight;
+
+            if (villager < 1) {
+                if (knight > 0) {
+                    knight = 0;
+                    villager = playerCount - werewolf - seer - medium;
+                }
+                if (villager < 1 && medium > 0) {
+                    medium = 0;
+                    villager = playerCount - werewolf - seer;
+                }
+            }
+
+            return { werewolf, seer, medium, knight, villager };
+        }
+
+        function goToNameInput() {
+            const playerCount = parseInt(document.getElementById('playerCount').value);
+            gameState.playerCount = playerCount;
+            gameState.includeMedium = document.getElementById('includeMedium').checked;
+            gameState.includeKnight = document.getElementById('includeKnight').checked;
+
+            const nameList = document.getElementById('nameInputList');
+            nameList.innerHTML = '';
+
+            for (let i = 1; i <= playerCount; i++) {
+                const li = document.createElement('li');
+                li.className = 'name-input-item';
+                
+                // 最初のプレイヤーにLINE表示名を使用（もしあれば）
+                let defaultName = `プレイヤー${i}`;
+                if (i === 1 && window.userDisplayName) {
+                    defaultName = window.userDisplayName;
+                }
+                
+                li.innerHTML = `
+                    <label>PLAYER ${i}</label>
+                    <input type="text" id="playerName${i}" placeholder="名前を入力" value="${defaultName}">
+                `;
+                nameList.appendChild(li);
+            }
+
+            showSection('name-input-section');
+        }
+
+        function backToSetup() {
+            showSection('setup-section');
+        }
+
+        function startGame() {
+            const playerCount = gameState.playerCount;
+            const includeMedium = gameState.includeMedium;
+            const includeKnight = gameState.includeKnight;
+
+            gameState.playerNames = [];
+            for (let i = 1; i <= playerCount; i++) {
+                const name = document.getElementById(`playerName${i}`).value.trim() || `プレイヤー${i}`;
+                gameState.playerNames.push(name);
+            }
+
+            const composition = getRoleComposition(playerCount, includeMedium, includeKnight);
+            
+            let roles = [];
+            for (let i = 0; i < composition.werewolf; i++) roles.push('werewolf');
+            for (let i = 0; i < composition.seer; i++) roles.push('seer');
+            for (let i = 0; i < composition.medium; i++) roles.push('medium');
+            for (let i = 0; i < composition.knight; i++) roles.push('knight');
+            for (let i = 0; i < composition.villager; i++) roles.push('villager');
+
+            roles = roles.sort(() => Math.random() - 0.5);
+
+            gameState.players = roles.map((role, index) => ({
+                id: index + 1,
+                name: gameState.playerNames[index],
+                role: role,
+                alive: true,
+                revealed: false
+            }));
+
+            gameState.currentPlayer = 0;
+            gameState.day = 1;
+
+            showSection('role-reveal-section');
+            document.body.className = 'night-phase';
+            updateRoleReveal();
+        }
+
+        function resetGame() {
+            const playerCount = gameState.playerCount;
+            const includeMedium = gameState.includeMedium;
+            const includeKnight = gameState.includeKnight;
+            const savedNames = [...gameState.playerNames];
+
+            const composition = getRoleComposition(playerCount, includeMedium, includeKnight);
+            
+            let roles = [];
+            for (let i = 0; i < composition.werewolf; i++) roles.push('werewolf');
+            for (let i = 0; i < composition.seer; i++) roles.push('seer');
+            for (let i = 0; i < composition.medium; i++) roles.push('medium');
+            for (let i = 0; i < composition.knight; i++) roles.push('knight');
+            for (let i = 0; i < composition.villager; i++) roles.push('villager');
+
+            roles = roles.sort(() => Math.random() - 0.5);
+
+            gameState.players = roles.map((role, index) => ({
+                id: index + 1,
+                name: savedNames[index],
+                role: role,
+                alive: true,
+                revealed: false
+            }));
+
+            gameState.currentPlayer = 0;
+            gameState.day = 1;
+            gameState.playerNames = savedNames;
+
+            showSection('role-reveal-section');
+            document.body.className = 'night-phase';
+            updateRoleReveal();
+        }
+
+        function updateRoleReveal() {
+            const player = gameState.players[gameState.currentPlayer];
+            document.getElementById('confirmPlayerName').textContent = `${player.name}ですか？`;
+            document.getElementById('playerConfirmation').style.display = 'block';
+            document.getElementById('hiddenRole').style.display = 'none';
+            document.getElementById('roleCard').style.display = 'none';
+            document.getElementById('nextPlayerBtn').style.display = 'none';
+            document.getElementById('startNightBtn').style.display = 'none';
+        }
+
+        function confirmPlayer() {
+            const player = gameState.players[gameState.currentPlayer];
+            document.getElementById('playerNumber').textContent = player.name;
+            document.getElementById('playerConfirmation').style.display = 'none';
+            document.getElementById('hiddenRole').style.display = 'block';
+        }
+
+        function revealRole() {
+            const player = gameState.players[gameState.currentPlayer];
+            player.revealed = true;
+
+            const roleInfo = {
+                werewolf: { name: '人狼', emoji: '🐺', desc: '夜に市民を襲撃できます', class: 'werewolf' },
+                seer: { name: '占い師', emoji: '🔮', desc: '夜に誰かの正体を占えます', class: 'seer' },
+                medium: { name: '霊媒師', emoji: '✝️', desc: '処刑された人が人狼か確認できます', class: 'medium' },
+                knight: { name: '騎士', emoji: '⚔️', desc: '夜に誰かを人狼から守れます', class: 'knight' },
+                villager: { name: '市民', emoji: '👤', desc: '特殊能力はありませんが、議論で貢献しましょう', class: 'villager' }
+            };
+
+            const info = roleInfo[player.role];
+            document.getElementById('roleCard').innerHTML = `
+                <div class="role-card ${info.class}">
+                    <h2>${info.emoji} ${info.name}</h2>
+                    <p>${info.desc}</p>
+                </div>
+            `;
+
+            document.getElementById('hiddenRole').style.display = 'none';
+            document.getElementById('roleCard').style.display = 'block';
+
+            if (gameState.currentPlayer < gameState.players.length - 1) {
+                document.getElementById('nextPlayerBtn').style.display = 'block';
+            } else {
+                document.getElementById('startNightBtn').style.display = 'block';
+            }
+        }
+
+        function nextPlayer() {
+            gameState.currentPlayer++;
+            updateRoleReveal();
+        }
+
+        function startNight() {
+            gameState.phase = 'night';
+            gameState.nightActions = [];
+            gameState.currentNightAction = 0;
+            gameState.werewolfTarget = null;
+            gameState.werewolfVotes = {};
+            gameState.knightTarget = null;
+            gameState.seerTarget = null;
+
+            const werewolves = gameState.players.filter(p => p.role === 'werewolf' && p.alive);
+            const seer = gameState.players.find(p => p.role === 'seer' && p.alive);
+            const knight = gameState.players.find(p => p.role === 'knight' && p.alive);
+
+            // 人狼が複数いる場合、それぞれ個別にアクション
+            if (werewolves.length > 0) {
+                werewolves.forEach(wolf => {
+                    gameState.nightActions.push({ type: 'werewolf', player: wolf });
+                });
+            }
+            if (seer) gameState.nightActions.push({ type: 'seer', player: seer });
+            if (knight) gameState.nightActions.push({ type: 'knight', player: knight });
+
+            showSection('night-section');
+            document.body.className = 'night-phase';
+            document.getElementById('nightPhaseIndicator').textContent = `🌙 NIGHT - DAY ${gameState.day}`;
+            processNightAction();
+        }
+
+        function processNightAction() {
+            if (gameState.currentNightAction >= gameState.nightActions.length) {
+                document.getElementById('nightPlayerConfirmation').style.display = 'none';
+                document.getElementById('nightActionContent').style.display = 'none';
+                document.getElementById('nightNextBtn').style.display = 'none';
+                document.getElementById('startDayBtn').style.display = 'block';
+                return;
+            }
+
+            const actionObj = gameState.nightActions[gameState.currentNightAction];
+            const action = actionObj.type;
+            const player = actionObj.player;
+
+            // プレイヤー確認画面を表示
+            let confirmMessage = '';
+            if (action === 'werewolf') {
+                confirmMessage = `${player.name}ですか？`;
+            } else if (action === 'seer') {
+                confirmMessage = `${player.name}ですか？`;
+            } else if (action === 'knight') {
+                confirmMessage = `${player.name}ですか？`;
+            }
+
+            document.getElementById('nightConfirmPlayerName').textContent = confirmMessage;
+            document.getElementById('nightPlayerConfirmation').style.display = 'block';
+            document.getElementById('nightActionContent').style.display = 'none';
+            document.getElementById('nightNextBtn').style.display = 'none';
+            document.getElementById('startDayBtn').style.display = 'none';
+        }
+
+        function confirmNightPlayer() {
+            document.getElementById('nightPlayerConfirmation').style.display = 'none';
+            document.getElementById('nightActionContent').style.display = 'block';
+            showNightActionContent();
+        }
+
+        function showNightActionContent() {
+            const actionObj = gameState.nightActions[gameState.currentNightAction];
+            const action = actionObj.type;
+            const player = actionObj.player;
+            const alivePlayers = gameState.players.filter(p => p.alive);
+
+            let content = '';
+
+            if (action === 'werewolf') {
+                content = `
+                    <div class="game-info">
+                        <h3>🐺 人狼の襲撃</h3>
+                        <p>${player.name}は襲撃する相手を選んでください</p>
+                    </div>
+                    <ul class="player-list" id="werewolfTargetList"></ul>
+                `;
+
+                document.getElementById('nightActionContent').innerHTML = content;
+                
+                const targetList = document.getElementById('werewolfTargetList');
+                alivePlayers.filter(p => p.role !== 'werewolf').forEach(targetPlayer => {
+                    const li = document.createElement('li');
+                    li.className = 'player-item';
+                    li.textContent = targetPlayer.name;
+                    li.onclick = () => {
+                        document.querySelectorAll('#werewolfTargetList .player-item').forEach(item => {
+                            item.classList.remove('selected');
+                        });
+                        li.classList.add('selected');
+                        gameState.werewolfVotes[player.id] = targetPlayer.id;
+                    };
+                    targetList.appendChild(li);
+                });
+            } else if (action === 'seer') {
+                content = `
+                    <div class="game-info">
+                        <h3>🔮 占い師の占い</h3>
+                        <p>${player.name}は占う相手を選んでください</p>
+                    </div>
+                    <ul class="player-list" id="seerTargetList"></ul>
+                `;
+
+                document.getElementById('nightActionContent').innerHTML = content;
+                
+                const targetList = document.getElementById('seerTargetList');
+                alivePlayers.filter(p => p.id !== player.id).forEach(targetPlayer => {
+                    const li = document.createElement('li');
+                    li.className = 'player-item';
+                    li.textContent = targetPlayer.name;
+                    li.onclick = () => {
+                        document.querySelectorAll('#seerTargetList .player-item').forEach(item => {
+                            item.classList.remove('selected');
+                        });
+                        li.classList.add('selected');
+                        gameState.seerTarget = targetPlayer.id;
+                    };
+                    targetList.appendChild(li);
+                });
+            } else if (action === 'knight') {
+                content = `
+                    <div class="game-info">
+                        <h3>⚔️ 騎士の護衛</h3>
+                        <p>${player.name}は守る相手を選んでください</p>
+                    </div>
+                    <ul class="player-list" id="knightTargetList"></ul>
+                `;
+
+                document.getElementById('nightActionContent').innerHTML = content;
+                
+                const targetList = document.getElementById('knightTargetList');
+                alivePlayers.forEach(targetPlayer => {
+                    const li = document.createElement('li');
+                    li.className = 'player-item';
+                    li.textContent = targetPlayer.name;
+                    li.onclick = () => {
+                        document.querySelectorAll('#knightTargetList .player-item').forEach(item => {
+                            item.classList.remove('selected');
+                        });
+                        li.classList.add('selected');
+                        gameState.knightTarget = targetPlayer.id;
+                    };
+                    targetList.appendChild(li);
+                });
+            }
+
+            document.getElementById('nightNextBtn').style.display = 'block';
+            document.getElementById('startDayBtn').style.display = 'none';
+        }
+
+        function nextNightAction() {
+            const actionObj = gameState.nightActions[gameState.currentNightAction];
+            const action = actionObj.type;
+            const player = actionObj.player;
+            
+            if (action === 'werewolf' && !gameState.werewolfVotes[player.id]) {
+                alert('襲撃する相手を選んでください');
+                return;
+            }
+            if (action === 'seer' && !gameState.seerTarget) {
+                alert('占う相手を選んでください');
+                return;
+            }
+            if (action === 'knight' && !gameState.knightTarget) {
+                alert('守る相手を選んでください');
+                return;
+            }
+
+            if (action === 'seer' && gameState.seerTarget) {
+                const target = gameState.players.find(p => p.id === gameState.seerTarget);
+                const isWerewolf = target.role === 'werewolf';
+                
+                const roleInfo = {
+                    werewolf: '人狼',
+                    seer: '占い師',
+                    medium: '霊媒師',
+                    knight: '騎士',
+                    villager: '市民'
+                };
+                
+                const resultHtml = `
+                    <p style="margin-bottom: 15px;">${player.name}のみ確認</p>
+                    <p style="font-size: 14px; margin-bottom: 10px;">${target.name}の正体は</p>
+                    <p style="font-size: 18px; color: #00ff88; font-weight: bold; margin-bottom: 15px;">「${roleInfo[target.role]}」</p>
+                    <p style="font-size: 14px;">${isWerewolf ? '⚠️ 人狼です！' : '✓ 人狼ではありません'}</p>
+                `;
+                
+                document.getElementById('seerResultContent').innerHTML = resultHtml;
+                document.getElementById('nightActionContent').style.display = 'none';
+                document.getElementById('nightNextBtn').style.display = 'none';
+                document.getElementById('seerResult').style.display = 'block';
+                return;
+            }
+
+            gameState.currentNightAction++;
+            processNightAction();
+        }
+
+        function closeSeerResult() {
+            document.getElementById('seerResult').style.display = 'none';
+            document.getElementById('nightActionContent').style.display = 'block';
+            gameState.currentNightAction++;
+            processNightAction();
+        }
+
+        function startDay() {
+            gameState.phase = 'vote';
+            
+            // 人狼の投票を集計（最多得票者が襲撃される）
+            let victim = null;
+            if (Object.keys(gameState.werewolfVotes).length > 0) {
+                const targetCounts = {};
+                Object.values(gameState.werewolfVotes).forEach(targetId => {
+                    targetCounts[targetId] = (targetCounts[targetId] || 0) + 1;
+                });
+                
+                let maxVotes = 0;
+                let selectedTarget = null;
+                for (let targetId in targetCounts) {
+                    if (targetCounts[targetId] > maxVotes) {
+                        maxVotes = targetCounts[targetId];
+                        selectedTarget = parseInt(targetId);
+                    }
+                }
+                
+                if (selectedTarget && selectedTarget !== gameState.knightTarget) {
+                    victim = gameState.players.find(p => p.id === selectedTarget);
+                    victim.alive = false;
+                }
+                gameState.werewolfTarget = selectedTarget;
+            }
+
+            showSection('vote-section');
+            document.body.className = 'day-phase';
+            document.getElementById('votePhaseIndicator').textContent = `☀️ DAY - DAY ${gameState.day}`;
+            
+            let message = '';
+            if (victim) {
+                message = `昨夜、${victim.name}が人狼に襲撃されました...`;
+            } else if (gameState.werewolfTarget && gameState.werewolfTarget === gameState.knightTarget) {
+                message = '昨夜は誰も襲撃されませんでした（騎士が守りました！）';
+            } else {
+                message = '昨夜は平和な夜でした';
+            }
+            document.getElementById('nightResultMessage').textContent = message;
+
+            // 投票のリセット
+            gameState.currentVoter = 0;
+            gameState.votes = [];
+            gameState.voteCounts = {};
+            
+            const alivePlayers = gameState.players.filter(p => p.alive);
+            alivePlayers.forEach(player => {
+                gameState.voteCounts[player.id] = 0;
+            });
+
+            document.getElementById('voterConfirmation').style.display = 'none';
+            document.getElementById('voteSelection').style.display = 'none';
+            document.getElementById('startVoteBtn').style.display = 'block';
+            document.getElementById('confirmVoteBtn').style.display = 'none';
+
+            checkGameEnd();
+        }
+
+        function startVoting() {
+            document.getElementById('startVoteBtn').style.display = 'none';
+            showNextVoter();
+        }
+
+        function showNextVoter() {
+            const alivePlayers = gameState.players.filter(p => p.alive);
+            
+            if (gameState.currentVoter >= alivePlayers.length) {
+                // 全員の投票完了
+                document.getElementById('voterConfirmation').style.display = 'none';
+                document.getElementById('voteSelection').style.display = 'none';
+                document.getElementById('confirmVoteBtn').style.display = 'block';
+                return;
+            }
+
+            const voter = alivePlayers[gameState.currentVoter];
+            document.getElementById('currentVoterName').textContent = `${voter.name}の投票ですか？`;
+            document.getElementById('voterConfirmation').style.display = 'block';
+            document.getElementById('voteSelection').style.display = 'none';
+        }
+
+        function confirmVoter() {
+            const alivePlayers = gameState.players.filter(p => p.alive);
+            const voter = alivePlayers[gameState.currentVoter];
+            
+            document.getElementById('voterConfirmation').style.display = 'none';
+            document.getElementById('voteSelection').style.display = 'block';
+
+            const voteList = document.getElementById('votePlayerList');
+            voteList.innerHTML = '';
+
+            alivePlayers.forEach(player => {
+                const li = document.createElement('li');
+                li.className = 'player-item';
+                li.textContent = player.name;
+                li.onclick = () => {
+                    // 投票を記録
+                    gameState.votes.push({ voter: voter.id, target: player.id });
+                    gameState.voteCounts[player.id]++;
+                    
+                    // 次の投票者へ
+                    gameState.currentVoter++;
+                    showNextVoter();
+                };
+                voteList.appendChild(li);
+            });
+        }
+
+        function processVote() {
+            let maxVotes = 0;
+            let executed = null;
+
+            for (let playerId in gameState.voteCounts) {
+                if (gameState.voteCounts[playerId] > maxVotes) {
+                    maxVotes = gameState.voteCounts[playerId];
+                    executed = parseInt(playerId);
+                }
+            }
+
+            if (!executed || maxVotes === 0) {
+                alert('投票してください');
+                return;
+            }
+
+            const executedPlayer = gameState.players.find(p => p.id === executed);
+            executedPlayer.alive = false;
+
+            let mediumResult = '';
+            const medium = gameState.players.find(p => p.role === 'medium' && p.alive);
+            if (medium) {
+                const isWerewolf = executedPlayer.role === 'werewolf';
+                mediumResult = isWerewolf 
+                    ? `\n\n霊媒師の結果（${medium.name}のみ確認）:\n${executedPlayer.name}は人狼でした！` 
+                    : `\n\n霊媒師の結果（${medium.name}のみ確認）:\n${executedPlayer.name}は人狼ではありませんでした`;
+                
+                alert(`${executedPlayer.name}が処刑されました${mediumResult}`);
+            } else {
+                alert(`${executedPlayer.name}が処刑されました`);
+            }
+
+            gameState.day++;
+
+            if (checkGameEnd()) {
+                return;
+            }
+
+            startNight();
+        }
+
+        function checkGameEnd() {
+            const aliveWerewolves = gameState.players.filter(p => p.role === 'werewolf' && p.alive);
+            const aliveVillagers = gameState.players.filter(p => p.role !== 'werewolf' && p.alive);
+
+            if (aliveWerewolves.length === 0) {
+                showResult('villagers');
+                return true;
+            }
+
+            if (aliveWerewolves.length >= aliveVillagers.length) {
+                showResult('werewolves');
+                return true;
+            }
+
+            return false;
+        }
+
+        function showResult(winner) {
+            showSection('result-section');
+            document.body.className = 'night-phase';
+
+            const winnerText = winner === 'villagers' ? '👥 VILLAGERS WIN!' : '🐺 WEREWOLVES WIN!';
+
+            let roleReveal = '<h3 style="margin-top: 30px; margin-bottom: 15px; color: #00ff88; font-size: 12px; text-transform: uppercase;">Role Reveal</h3><ul class="player-list">';
+            gameState.players.forEach(player => {
+                const roleEmoji = {
+                    werewolf: '🐺',
+                    seer: '🔮',
+                    medium: '✝️',
+                    knight: '⚔️',
+                    villager: '👤'
+                };
+                const roleName = {
+                    werewolf: '人狼',
+                    seer: '占い師',
+                    medium: '霊媒師',
+                    knight: '騎士',
+                    villager: '市民'
+                };
+                
+                roleReveal += `<li class="player-item ${!player.alive ? 'dead' : ''}">
+                    ${player.name} - ${roleEmoji[player.role]} ${roleName[player.role]}
+                </li>`;
+            });
+            roleReveal += '</ul>';
+
+            document.getElementById('resultContent').innerHTML = `
+                <div class="winner-announcement">
+                    <h2>${winnerText}</h2>
+                    <p>GAME OVER</p>
+                </div>
+                ${roleReveal}
+            `;
+
+            // LINEシェアボタンを追加
+            addShareButton(winner);
+        }
+
+        function addShareButton(winner) {
+            // LIFF環境でシェア機能が使える場合のみボタン追加
+            if (typeof liff !== 'undefined' && liff.isApiAvailable && liff.isApiAvailable('shareTargetPicker')) {
+                const resultContent = document.getElementById('resultContent');
+                const shareBtn = document.createElement('button');
+                shareBtn.className = 'btn btn-primary';
+                shareBtn.style.marginTop = '20px';
+                shareBtn.textContent = '📤 結果をシェア';
+                shareBtn.onclick = () => shareResult(winner);
+                resultContent.appendChild(shareBtn);
+            }
+        }
+
+        function shareResult(winner) {
+            const winnerText = winner === 'villagers' ? '村人陣営' : '人狼陣営';
+            const alivePlayers = gameState.players.filter(p => p.alive).length;
+            const totalPlayers = gameState.players.length;
+            
+            liff.shareTargetPicker([
+                {
+                    type: 'text',
+                    text: `🐺 人狼ゲーム 結果発表 🐺\n\n勝者: ${winnerText}\n生存者: ${alivePlayers}/${totalPlayers}人\n\nみんなで一緒にプレイしよう！\n\n#人狼ゲーム #LIFF`
+                }
+            ])
+            .then(() => {
+                console.log('✅ シェア成功');
+            })
+            .catch(err => {
+                console.error('❌ シェアエラー:', err);
+                alert('シェアに失敗しました');
+            });
+        }
+
+        function showSection(sectionClass) {
+            document.querySelectorAll('.setup-section, .name-input-section, .role-reveal-section, .night-section, .vote-section, .result-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            document.querySelector('.' + sectionClass).classList.add('active');
+        }
+
+        function confirmReset() {
+            console.log('Reset button clicked!');
+            document.getElementById('resetModal').classList.add('active');
+        }
+
+        function closeResetModal() {
+            document.getElementById('resetModal').classList.remove('active');
+        }
+
+        function replayGame() {
+            closeResetModal();
+            if (gameState.players && gameState.players.length > 0) {
+                resetGame();
+            } else {
+                alert('まだゲームが始まっていません');
+            }
+        }
+
+        function showNewGameConfirm() {
+            closeResetModal();
+            document.getElementById('newGameModal').classList.add('active');
+        }
+
+        function closeNewGameModal() {
+            document.getElementById('newGameModal').classList.remove('active');
+        }
+
+        function startNewGame() {
+            console.log('Starting new game - reloading page');
+            location.reload();
+        }
+    </script>
+</body>
+</html>
