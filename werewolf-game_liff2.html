@@ -761,12 +761,12 @@
 <body class="night-phase">
     <div class="pixel-stars" id="starsContainer"></div>
     
-    <button class="reset-button" id="resetBtn" title="ゲームをリセット">×</button>
+    <button class="reset-button" id="resetBtn" title="ゲームをリセット" style="display: none;">×</button>
 
     <!-- リセット確認モーダル -->
     <div class="reset-modal" id="resetModal">
         <div class="reset-modal-content">
-            <h3>RESET GAME?</h3>
+            <h3>ゲームをリセット？</h3>
             <p>どちらを選択しますか？</p>
             <div class="reset-modal-buttons">
                 <button class="btn btn-primary" onclick="replayGame()">同じメンバーで再プレイ</button>
@@ -1014,7 +1014,8 @@
             totalVotes: 0,
             playerNames: [],
             currentVoter: 0,
-            votes: []
+            votes: [],
+            lastExecuted: null
         };
 
         window.onload = function() {
@@ -1134,6 +1135,9 @@
             gameState.currentPlayer = 0;
             gameState.day = 1;
 
+            // リセットボタンを表示
+            document.getElementById('resetBtn').style.display = 'flex';
+
             showSection('role-reveal-section');
             document.body.className = 'night-phase';
             updateRoleReveal();
@@ -1236,6 +1240,7 @@
 
             const werewolves = gameState.players.filter(p => p.role === 'werewolf' && p.alive);
             const seer = gameState.players.find(p => p.role === 'seer' && p.alive);
+            const medium = gameState.players.find(p => p.role === 'medium' && p.alive);
             const knight = gameState.players.find(p => p.role === 'knight' && p.alive);
 
             // 人狼が複数いる場合、それぞれ個別にアクション
@@ -1245,6 +1250,10 @@
                 });
             }
             if (seer) gameState.nightActions.push({ type: 'seer', player: seer });
+            // 霊媒師は処刑された人がいる場合のみ
+            if (medium && gameState.lastExecuted) {
+                gameState.nightActions.push({ type: 'medium', player: medium });
+            }
             if (knight) gameState.nightActions.push({ type: 'knight', player: knight });
 
             showSection('night-section');
@@ -1271,6 +1280,8 @@
             if (action === 'werewolf') {
                 confirmMessage = `${player.name}ですか？`;
             } else if (action === 'seer') {
+                confirmMessage = `${player.name}ですか？`;
+            } else if (action === 'medium') {
                 confirmMessage = `${player.name}ですか？`;
             } else if (action === 'knight') {
                 confirmMessage = `${player.name}ですか？`;
@@ -1372,6 +1383,27 @@
                     };
                     targetList.appendChild(li);
                 });
+            } else if (action === 'medium') {
+                // 霊媒師の結果表示
+                const isWerewolf = gameState.lastExecuted.role === 'werewolf';
+                
+                content = `
+                    <div class="game-info">
+                        <h3>✝️ 霊媒師の霊視</h3>
+                        <p>${player.name}のみ確認</p>
+                    </div>
+                    <div style="text-align: center; padding: 20px; background: rgba(102, 126, 234, 0.1); border: 2px solid rgba(102, 126, 234, 0.3); border-radius: 10px; margin: 20px 0;">
+                        <p style="font-size: 14px; margin-bottom: 10px; color: #ccc;">昨日処刑された ${gameState.lastExecuted.name} は</p>
+                        <p style="font-size: 18px; color: #00ff88; font-weight: bold; margin-bottom: 15px;">
+                            ${isWerewolf ? '⚠️ 人狼でした！' : '✓ 人狼ではありませんでした'}
+                        </p>
+                    </div>
+                `;
+
+                document.getElementById('nightActionContent').innerHTML = content;
+                
+                // 霊媒師は選択不要なので、NEXTボタンのテキストを変更
+                document.getElementById('nightNextBtn').textContent = 'OK';
             }
 
             document.getElementById('nightNextBtn').style.display = 'block';
@@ -1395,6 +1427,7 @@
                 alert('守る相手を選んでください');
                 return;
             }
+            // 霊媒師はバリデーション不要（結果を見るだけ）
 
             if (action === 'seer' && gameState.seerTarget) {
                 const target = gameState.players.find(p => p.id === gameState.seerTarget);
@@ -1421,6 +1454,9 @@
                 document.getElementById('seerResult').style.display = 'block';
                 return;
             }
+
+            // NEXTボタンのテキストをリセット
+            document.getElementById('nightNextBtn').textContent = 'NEXT';
 
             gameState.currentNightAction++;
             processNightAction();
@@ -1560,18 +1596,15 @@
             const executedPlayer = gameState.players.find(p => p.id === executed);
             executedPlayer.alive = false;
 
-            let mediumResult = '';
-            const medium = gameState.players.find(p => p.role === 'medium' && p.alive);
-            if (medium) {
-                const isWerewolf = executedPlayer.role === 'werewolf';
-                mediumResult = isWerewolf 
-                    ? `\n\n霊媒師の結果（${medium.name}のみ確認）:\n${executedPlayer.name}は人狼でした！` 
-                    : `\n\n霊媒師の結果（${medium.name}のみ確認）:\n${executedPlayer.name}は人狼ではありませんでした`;
-                
-                alert(`${executedPlayer.name}が処刑されました${mediumResult}`);
-            } else {
-                alert(`${executedPlayer.name}が処刑されました`);
-            }
+            // 霊媒師用に処刑された人の情報を保存
+            gameState.lastExecuted = {
+                id: executedPlayer.id,
+                name: executedPlayer.name,
+                role: executedPlayer.role
+            };
+
+            // 処刑のメッセージを表示（霊媒師の結果は夜に表示）
+            // alert削除：霊媒師が夜に確認するため
 
             gameState.day++;
 
